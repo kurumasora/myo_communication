@@ -7,7 +7,7 @@ import PIL.ImageFont
 import cv2
 
 #シリアルポートcom9,シリアルポーレート115200
-ser = serial.Serial('/dev/cu.MyoScanBT1',115200)
+ser = serial.Serial('/dev/cu.usbserial-58550230311',115200, timeout = 1)
 
 #データを格納する配列
 data_1 = []
@@ -29,7 +29,7 @@ def draw_text_at_center(img, text_1):
     draw = PIL.ImageDraw.Draw(img)
 
     # フォントの設定
-    font_ttf = 'C:/Windows/Fonts/msgothic.ttc'
+    font_ttf = '/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc'
     draw.font = PIL.ImageFont.truetype(font_ttf, 200)
 
     # テキストの描画(BGRの順)
@@ -78,6 +78,7 @@ def predict():
 while True:
     #数値の読み取り
     s = ser.readline()
+    #print(s)
     #\rの削除．読み取った数値には/rや,などいらんもんがある
     val = s.decode("utf-8").rstrip(",\r")
     val_1 = val.replace("\r", "")
@@ -121,7 +122,7 @@ while True:
             data_1 = []
 
             #学習モデルの呼び出し
-            m = load_model("test.model")
+            m = load_model("train.model")
 
             #手を動かしたときに戻す動作が必要な場合があるためキャラクタを出力したら1回学習をせず間を作る
             if(count_4 == 0):
