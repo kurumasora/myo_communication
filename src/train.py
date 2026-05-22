@@ -11,7 +11,7 @@ import pandas as pd
 #正解ラベル:validation_truth
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR.parent / "teacher_data"
+DATA_DIR = BASE_DIR.parent / "teacher_data/raw"
 
 train_data = pd.read_csv(DATA_DIR / "data.csv", comment="#", header=None).to_numpy().ravel()#csvでのコメント処理
 
