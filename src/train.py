@@ -2,6 +2,7 @@ import numpy as np
 from pathlib import Path
 from nn.model import model
 from nn.util import to_categorical, save_model
+import pandas as pd
 
 #CSSのデータを読み込む
 #教師データ:train_data
@@ -12,19 +13,7 @@ from nn.util import to_categorical, save_model
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR.parent / "teacher_data"
 
-with open(DATA_DIR / "data.csv", encoding="utf-8") as f:
-    train_data_a = f.read()
-    train_data_1 = []
-    count = 0
-    for i in range(len(train_data_a)):
-        count = count + 1
-        if (train_data_a[i] == ','):
-            train_data_1.append(int(train_data_a[i+1-count:i]))
-            count = 0
-        if (train_data_a[i] == '\n'):
-            train_data_1.append(int(train_data_a[i+1-count:i]))
-            count = 0
-    train_data = np.array(train_data_1)
+train_data = pd.read_csv(DATA_DIR / "data.csv", comment="#", header=None).to_numpy().ravel()#csvでのコメント処理
 
 with open(DATA_DIR / "label.csv", encoding="utf-8") as f:
     train_label_a = f.read()
