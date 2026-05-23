@@ -11,18 +11,12 @@ import pandas as pd
 #正解ラベル:validation_truth
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR.parent / "teacher_data/raw"
+DATA_DIR = BASE_DIR.parent / "teacher_data/train"
 
 train_data = pd.read_csv(DATA_DIR / "data.csv", comment="#", header=None).to_numpy().ravel()#csvでのコメント処理
 
-with open(DATA_DIR / "label.csv", encoding="utf-8") as f:
-    train_label_a = f.read()
-    train_label_b = train_label_a.replace("\ufeff", "")
-    train_label_c = train_label_b.replace("\n", "")
-    train_label_1 = []
-    for i in range (len(train_label_c)):
-        train_label_1.append(int(train_label_c[i]))
-    train_label = np.array(train_label_1)
+with open(DATA_DIR / "label.csv", encoding="utf-8-sig") as f:
+    train_label = np.array([int(line.strip()) for line in f if line.strip()])
 #データの形状を変更
 train_data = train_data.reshape(train_label.shape[0], -1)
 #データの正規化
