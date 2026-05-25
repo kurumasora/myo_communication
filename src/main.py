@@ -1,168 +1,214 @@
-import serial
+# -*- coding: utf-8 -*-
+import time
+from pathlib import Path
+
+import cv2
 import numpy as np
-from nn.util import load_model
 import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageFont
-import cv2
+import serial
 
-#シリアルポートcom9,シリアルポーレート115200
-ser = serial.Serial('/dev/cu.usbserial-58550230311',115200, timeout = 1)
+from nn.util import load_model
 
-#データを格納する配列
-data_1 = []
 
-#キャラクタを格納する配列
-character_1 = []
+SERIAL_PORT = "/dev/cu.usbserial-575E0797941"
+SERIAL_BAUDRATE = 115200
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_PATH = BASE_DIR / "train.model"
+WINDOW_NAME = "Myo Matrix Input"
+DEBOUNCE_SECONDS = 0.4
 
-#カウント
-count = 0
-count_1 = 0
-count_2 = 0
-count_3 = 0
-count_4 = 0
-count_5 = 0
+# 現在の学習ラベルが 0..3 の場合:
+# 0: 待機, 1: 右, 2: 下, 3: 決定
+#
+# 上/左も使うように再学習した場合は、例えば以下のように増やせます。
+# 4: 左, 5: 上
+ACTION_BY_LABEL = {
+    1: "right",
+    2: "down",
+    3: "select",
+    4: "left",
+    5: "up",
+}
 
-#mv2に文字を出力する
-def draw_text_at_center(img, text_1):
-    global count_5
-    draw = PIL.ImageDraw.Draw(img)
+CHAR_MATRIX = [
+    ["あ", "か", "さ", "た", "な"],
+    ["い", "き", "し", "ち", "に"],
+    ["う", "く", "す", "つ", "ぬ"],
+    ["え", "け", "せ", "て", "ね"],
+    ["お", "こ", "そ", "と", "の"],
+]
 
-    # フォントの設定
-    font_ttf = '/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc'
-    draw.font = PIL.ImageFont.truetype(font_ttf, 200)
 
-    # テキストの描画(BGRの順)
-    #(x,y)の場所に,textを白(255, 255, 255)で出力する
-    draw.text((0,200), text_1, (255, 255, 255))
+def load_font(size):
+    font_candidates = [
+        "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
+        "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
+        "Arial.ttf",
+    ]
+    for font_path in font_candidates:
+        try:
+            return PIL.ImageFont.truetype(font_path, size)
+        except OSError:
+            pass
+    return PIL.ImageFont.load_default()
 
-#PIL->OpenCVに変換する関数を呼び出し
+
 def pil_to_cv2(image):
-    # numpy.ndarrayに変換
+    """PILイメージをOpenCV形式に変換する。"""
     new_image = np.array(image, dtype=np.uint8)
-    if new_image.ndim == 2:
-        pass
-    elif new_image.shape[2] == 3:
+    if new_image.ndim == 3 and new_image.shape[2] == 3:
         new_image = new_image[:, :, ::-1]
     return new_image
 
-#予測関数
-def predict():
-    #globalで関数内で変数が変化しても関数外にも適応させる
-    global count_4
-    global count_5
 
-    #入力データが教師データのどれに近いのか
-    #正規化
-    pred = m.predict([data/255.0])
+def text_size(draw, text, font):
+    bbox = draw.textbbox((0, 0), text, font=font)
+    return bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+
+class MatrixInputController:
+    def __init__(self, matrix, debounce_seconds=0.4):
+        self.matrix = matrix
+        self.rows = len(matrix)
+        self.cols = len(matrix[0])
+        self.row = 0
+        self.col = 0
+        self.text_buffer = []
+        self.previous_label = 0
+        self.last_trigger_time = 0.0
+        self.debounce_seconds = debounce_seconds
+
+    def process_label(self, predicted_label):
+        """推論ラベルをエッジトリガー + 不応期つきで操作に変換する。"""
+        now = time.time()
+        current_label = int(predicted_label)
+        should_trigger = (
+            self.previous_label == 0
+            and current_label != 0
+            and now - self.last_trigger_time >= self.debounce_seconds
+        )
+
+        if should_trigger:
+            action = ACTION_BY_LABEL.get(current_label)
+            if action is not None:
+                self.apply_action(action)
+                self.last_trigger_time = now
+
+        self.previous_label = current_label
+
+    def apply_action(self, action):
+        if action == "right":
+            self.col = (self.col + 1) % self.cols
+        elif action == "left":
+            self.col = (self.col - 1) % self.cols
+        elif action == "down":
+            self.row = (self.row + 1) % self.rows
+        elif action == "up":
+            self.row = (self.row - 1) % self.rows
+        elif action == "select":
+            self.select_current_char()
+
+    def select_current_char(self):
+        selected_char = self.matrix[self.row][self.col]
+        self.text_buffer.append(selected_char)
+
+    def draw(self):
+        win_w, win_h = 1000, 600
+        img = PIL.Image.new("RGB", (win_w, win_h), (20, 20, 20))
+        draw = PIL.ImageDraw.Draw(img)
+
+        font_cell = load_font(42)
+        font_buffer = load_font(34)
+        font_status = load_font(22)
+
+        start_x, start_y = 110, 145
+        cell_w, cell_h = 155, 70
+        gap = 8
+
+        display_text = "".join(self.text_buffer[-20:])
+        draw.text((70, 45), "入力: " + display_text, fill=(0, 255, 128), font=font_buffer)
+
+        for r, row_values in enumerate(self.matrix):
+            for c, char_text in enumerate(row_values):
+                x1 = start_x + c * cell_w
+                y1 = start_y + r * cell_h
+                x2 = x1 + cell_w - gap
+                y2 = y1 + cell_h - gap
+
+                is_cursor = r == self.row and c == self.col
+                fill = (245, 245, 245) if is_cursor else (20, 20, 20)
+                outline = (255, 255, 255) if is_cursor else (100, 100, 100)
+                text_fill = (0, 0, 0) if is_cursor else (255, 255, 255)
+
+                draw.rectangle([x1, y1, x2, y2], fill=fill, outline=outline, width=3)
+                tw, th = text_size(draw, char_text, font_cell)
+                tx = x1 + ((x2 - x1) - tw) / 2
+                ty = y1 + ((y2 - y1) - th) / 2 - 3
+                draw.text((tx, ty), char_text, fill=text_fill, font=font_cell)
+
+        selected = self.matrix[self.row][self.col]
+        status = "0:待機  1:右  2:下  3:決定  /  現在位置: " + selected
+        draw.text((70, 535), status, fill=(190, 190, 190), font=font_status)
+
+        return pil_to_cv2(img)
+
+
+def predict_label(model, data):
+    pred = model.predict([data / 255.0])
     pred_classes = np.argmax(pred, axis=1)
-
-    #ラベルがpred_1に格納される
-    pred_1= int(pred_classes[0])
-    #pred_1が0じゃなければ文字を出力
-    #0は手を動かしていないときのラベル
-    if (pred_1 != 0):
-        #count_5が1なら character_1に文字を格納し1を足す
-        if (pred_1 == 1):
-            character_1.append("あ")
-        elif (pred_1 == 2):
-            character_1.append("い")
-        else:
-            character_1.append("う")
-
-        #出力画面はキャラクタを5個までしかできないからそのカウント
-        count_5 = count_5+1
-        #次は1回待機させるためのカウント
-        count_4 = 1
-
-while True:
-    #数値の読み取り
-    s = ser.readline()
-    #print(s)
-    #\rの削除．読み取った数値には/rや,などいらんもんがある
-    val = s.decode("utf-8").rstrip(",\r")
-    val_1 = val.replace("\r", "")
-
-    for i in range(len(val_1)):
-        #val_1[i] == ','になるまでのカウントをとる．
-        #格納した数値が2桁なのか3桁なのかを知りたい．
-        count = count + 1
-
-        if (val_1[i] == ','):
-            #val_1[i] == ','になるたびにカウントする
-            #','で区切られるデータが3つ取得するが必要なのは2つ目と3つ目
-            count_1 = count_1 + 1
-
-            if(count_1 == 2):
-                #取得したデータの2つ目のデータをdata_1配列に追加
-                data_1.append(int(val_1[i+1-count:i]))
-
-            if(count_1 == 3):
-                #取得したデータの3つ目のデータをdata_1配列に追加
-                data_1.append(int(val_1[i+1-count:i]))
-
-                #0に戻す．データは3個までしか取れない
-                count_1 = 0
-
-                #教師データは100だから入力データが100個取れるまでカウントする
-                count_2 = count_2 + 1
-            
-            #0に戻す．上限254だから3桁以上になることはない
-            count = 0
-        
-        #入力データが100個集ったら．2つ目と3つ目のデータをとってカウントするからcount_2が50で入力データ100
-        if (count_2 == 50):
-            #data_1は','で区切ってあるから','をなくし，配列化する
-            data = np.array(data_1[0:100])
-
-            #0に戻す．入力データが100以上だと学習できない
-            count_2 = 0
-
-            #初期化．次の入力データを格納するのに前の入力データを消去する
-            data_1 = []
-
-            #学習モデルの呼び出し
-            m = load_model("train.model")
-
-            #手を動かしたときに戻す動作が必要な場合があるためキャラクタを出力したら1回学習をせず間を作る
-            if(count_4 == 0):
-                #学習（予測関数）
-                predict()
-
-                #character_1に格納されたキャラクタをstr_list_1に格納
-                str_list_1 = [str(i) for i in character_1]
-                character_1_string = "".join(str_list_1)
-                
-                # 出力画面の生成
-                size = (1000, 600)
-                image = PIL.Image.new("RGB", size)
-
-                # テキストを描画する関数を呼び出し
-                draw_text_at_center(image, character_1_string)
-
-                # PIL->OpenCVに変換する関数を呼び出し
-                cv2_image = pil_to_cv2(image)
-
-                # 描画
-                cv2.imshow('test', cv2_image)
-                cv2.waitKey(1000)
-
-                # 画面を消去
-                cv2.destroyAllWindows()
-
-                #出力画面には5個までしか表示できないから5個表示したらcharacter_1を初期化してカウントを0に戻す
-                if (count_5 == 5):
-                    character_1=[]
-                    count_5 =0
-
-            #動作後の待機
-            else:
-                count_4 = 0
+    return int(pred_classes[0])
 
 
+def main():
+    ser = serial.Serial(SERIAL_PORT, SERIAL_BAUDRATE, timeout=1)
+    model = load_model(str(MODEL_PATH))
+    controller = MatrixInputController(CHAR_MATRIX, DEBOUNCE_SECONDS)
+
+    data_buffer = []
+    digit_count = 0
+    comma_count = 0
+    sample_count = 0
+
+    while True:
+        s = ser.readline()
+        try:
+            val = s.decode("utf-8").rstrip(",\r").replace("\r", "")
+        except UnicodeDecodeError:
+            continue
+
+        for i in range(len(val)):
+            digit_count += 1
+
+            if val[i] == ",":
+                comma_count += 1
+
+                if comma_count == 2:
+                    data_buffer.append(int(val[i + 1 - digit_count : i]))
+
+                if comma_count == 3:
+                    data_buffer.append(int(val[i + 1 - digit_count : i]))
+                    comma_count = 0
+                    sample_count += 1
+
+                digit_count = 0
+
+            if sample_count == 50:
+                data = np.array(data_buffer[0:100])
+                data_buffer = []
+                sample_count = 0
+
+                predicted_label = predict_label(model, data)
+                controller.process_label(predicted_label)
+
+                cv2.imshow(WINDOW_NAME, controller.draw())
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q") or key == 27:
+                    ser.close()
+                    cv2.destroyAllWindows()
+                    return
 
 
-
-
-
-
+if __name__ == "__main__":
+    main()
