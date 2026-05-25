@@ -5,9 +5,11 @@ import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageFont
 import cv2
+import os
 
 #シリアルポートcom9,シリアルポーレート115200
-ser = serial.Serial('/dev/cu.usbserial-58550230311',115200, timeout = 1)
+vtty_path = os.path.expanduser('~/vtty')
+ser = serial.Serial(vtty_path, 115200, timeout = 1)
 
 #データを格納する配列
 data_1 = []
@@ -29,7 +31,7 @@ def draw_text_at_center(img, text_1):
     draw = PIL.ImageDraw.Draw(img)
 
     # フォントの設定
-    font_ttf = '/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc'
+    font_ttf ='C:/Windows/Fonts/msgothic.ttc'
     draw.font = PIL.ImageFont.truetype(font_ttf, 200)
 
     # テキストの描画(BGRの順)
