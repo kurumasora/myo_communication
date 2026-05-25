@@ -8,7 +8,7 @@ import cv2
 
 #シリアルポートcom9,シリアルポーレート115200
 ser = serial.Serial('/dev/cu.usbserial-58550230311',115200, timeout = 1)
-##
+
 #データを格納する配列
 data_1 = []
 
