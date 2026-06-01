@@ -107,9 +107,10 @@ def run_kfold(pattern_name, data_raw, labels, use_augment=False, use_features=Fa
         else:
             X_tr = X_tr_raw / 255.0
             X_te = X_te_raw / 255.0
-            if use_augment:
-                # fold 分割後に水増し → テストデータには手を加えない
-                X_tr, y_tr = augment(X_tr, y_tr, sigma=0.02, n_augment=4)
+
+        if use_augment:
+            # fold 分割後に水増し → テストデータには手を加えない
+            X_tr, y_tr = augment(X_tr, y_tr, sigma=0.02, n_augment=4)
 
         m = build_and_train(X_tr, y_tr)
         acc = evaluate(m, X_te, y_te)
@@ -123,19 +124,25 @@ def run_kfold(pattern_name, data_raw, labels, use_augment=False, use_features=Fa
 
 
 def print_comparison(results):
-    labels_ja = ["ベースライン    ", "データ拡張      ", "特徴量抽出      "]
+    labels_ja = ["ベースライン        ", "データ拡張          ", "特徴量抽出          ", "特徴量抽出+データ拡張"]
     print("\n=== 最終比較 ===")
-    print(f"| {'手法':<16} | {'平均精度':^8} | {'標準偏差':^8} |")
-    print(f"|{'-'*18}|{'-'*10}|{'-'*10}|")
+    print(f"| {'手法':<20} | {'平均精度':^8} | {'標準偏差':^8} |")
+    print(f"|{'-'*22}|{'-'*10}|{'-'*10}|")
     for name, (mean, std) in zip(labels_ja, results):
         print(f"| {name} | {mean:.3f}    | {std:.3f}    |")
 
     best_idx = int(np.argmax([r[0] for r in results]))
-    recommend_labels = ["ベースライン", "データ拡張（Gaussian Noise）", "特徴量抽出（統計量）"]
+    recommend_labels = [
+        "ベースライン",
+        "データ拡張（Gaussian Noise）",
+        "特徴量抽出（統計量）",
+        "特徴量抽出 + データ拡張",
+    ]
     reasons = [
         "水増しや特徴変換なしでも最高精度が得られており、シンプルさと精度を両立できるため",
         "ガウシアンノイズによるデータ水増しが汎化性能の向上に最も寄与したため",
         "統計的特徴量による次元圧縮が筋電ジェスチャの識別に最も有効だったため",
+        "特徴量抽出とデータ拡張の組み合わせが精度・安定性の両面で最優位だったため",
     ]
     print(f"\n推奨手法: {recommend_labels[best_idx]}（理由: {reasons[best_idx]}）")
 
@@ -149,5 +156,6 @@ if __name__ == "__main__":
     results.append(run_kfold("パターンA：ベースライン", data_raw, labels))
     results.append(run_kfold("パターンB：データ拡張（Gaussian Noise）", data_raw, labels, use_augment=True))
     results.append(run_kfold("パターンC：特徴量抽出（統計量）", data_raw, labels, use_features=True))
+    results.append(run_kfold("パターンD：特徴量抽出 + データ拡張", data_raw, labels, use_features=True, use_augment=True))
 
     print_comparison(results)
