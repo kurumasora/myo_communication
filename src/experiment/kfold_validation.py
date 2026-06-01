@@ -120,7 +120,7 @@ def run_kfold(pattern_name, data_raw, labels, use_augment=False, use_features=Fa
     mean, std = float(np.mean(accs)), float(np.std(accs))
     print(f"  平均精度: {mean:.3f}")
     print(f"  標準偏差: {std:.3f}")
-    return mean, std
+    return mean, std, accs
 
 
 def print_comparison(results):
@@ -128,7 +128,8 @@ def print_comparison(results):
     print("\n=== 最終比較 ===")
     print(f"| {'手法':<20} | {'平均精度':^8} | {'標準偏差':^8} |")
     print(f"|{'-'*22}|{'-'*10}|{'-'*10}|")
-    for name, (mean, std) in zip(labels_ja, results):
+    for name, result in zip(labels_ja, results):
+        mean, std = result[0], result[1]
         print(f"| {name} | {mean:.3f}    | {std:.3f}    |")
 
     best_idx = int(np.argmax([r[0] for r in results]))
